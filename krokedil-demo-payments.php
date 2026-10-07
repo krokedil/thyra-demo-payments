@@ -1,5 +1,4 @@
 <?php
-
 /*
  * Plugin Name: Krokedil demo payments
  * Description: Betalplugin demo payments
@@ -9,17 +8,24 @@
  * Requires at least: 7
  */
 
+use Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType;
 
 
 //Abspath
 if (! defined('ABSPATH')) {
     exit;
 }
+//Funktionalitet för att WooCommerce Blocks ska känna igen pluginet
+add_action('before_woocommerce_init', function () {
+    if (class_exists('\Automattic\woocommerce\Utilities\FeaturesUtil')) {
+        \Automattic\woocommerce\Utilities\FeaturesUtil::declare_compatibility('cart_checkout_blocks', __FILE__, true);
+    }
+});
+
 
 //Prefix kdp - Krokedil demo payments
 
 //Från claude, kunde ej hitta hur det gjordes
-add_action( 'plugins_loaded', 'kdp_init' );
 add_action( 'plugins_loaded', 'kdp_init' );
 function kdp_init() {
     if ( ! class_exists( 'WooCommerce' ) ) {
@@ -40,6 +46,7 @@ function kdp_init() {
             $this->init_form_fields();
             $this->init_settings();
  
+            $this->enabled     = $this->get_option( 'enabled' );
             $this->title       = $this->get_option( 'title' );
             $this->description = $this->get_option( 'description' );
  
@@ -53,6 +60,7 @@ function kdp_init() {
             add_action( 'woocommerce_email_after_order_table', array( $this, 'kdp_email_instructions' ), 10, 3 );
         }
  
+        // Inställningar för betalningsmetoden
         public function init_form_fields() {
             $this->form_fields = array(
                 'enabled' => array(
@@ -85,6 +93,7 @@ function kdp_init() {
             );
         }
  
+        //Funktion som körs när betalningen genomförs
         public function process_payment( $order_id ) {
             $order = wc_get_order( $order_id );
  
@@ -118,9 +127,50 @@ function kdp_init() {
         }
  
     } 
- 
-    add_filter( 'woocommerce_payment_gateways', 'kdp_add_gateway' );
- 
+    
+        add_filter( 'woocommerce_payment_gateways', 'kdp_add_gateway' );
+    
+        
+        class KDP_Blocks_Support extends AbstractPaymentMethodType{
+
+        protected $name = 'kdp_gateway';
+
+        public function initialize() {
+            $this->name     = 'kdp_gateway';
+            $this->settings = get_option( 'woocommerce_kdp_gateway_settings', array() );
+        }
+
+        public function is_active() {
+            return isset( $this->settings['enabled'] ) && 'yes' === $this->settings['enabled'];
+        }
+        public function get_payment_method_script_handles() {
+            wp_register_script(
+                    'kdp-blocks',
+                    plugins_url( 'index.js', __FILE__ ),
+                    array( 'wc-blocks-registry', 'wc-settings', 'wp-element' ),
+                    null,
+                    true
+            );
+            return array( 'kdp-blocks' );
+        }
+
+        public function get_payment_method_data() {
+            return array(
+                'name' => $this->name,
+                'title' => $this->settings['title'] ?? '',
+                'description' => $this->settings['description'] ?? '',
+                'supports' => array( 'products' ),
+            );
+        }
+
+    }
+
+    //Copilot, registrerar betalningsmetoden för WooCommerce Blocks
+    add_action( 'woocommerce_blocks_payment_method_type_registration', function( $registry ) {
+        $registry->register( new KDP_Blocks_Support() );
+    } );
+     
+
 } 
 
 
